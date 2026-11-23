@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hearthline — a family plan for smog days</title>
+  <meta name="description" content="Hearthline builds a low-emission day for a household, a school, or a block when winter smog is the weather. Figures are calculated first.">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <a class="skip" href="#results">Skip to the plan</a>
+  <header class="mast">
+    <p class="mark">Hearthline</p>
+    <p class="tag">A day plan for families when winter smog is the weather.</p>
+  </header>
+  <main class="layout">
+    <form id="day" class="panel" novalidate>
+      <h1>Build today’s plan</h1>
+      <p class="lede">Tell Hearthline where you are and how the household actually lives. It calculates the effect of each change, then explains that effect in plain language.</p>
+      <div id="form-errors" role="alert"></div>
+      <p id="status" role="status"></p>
+
+      <fieldset>
+        <legend>Where</legend>
+        <div class="field">
+          <label for="city">City</label>
+          <input id="city" name="city" type="text" autocomplete="address-level2" required maxlength="120" aria-describedby="city-hint">
+          <p id="city-hint" class="hint">A city or neighbourhood. Pick the match so the plan uses the right place.</p>
+          <div id="places" class="places"></div>
+        </div>
+        <div class="presets" role="group" aria-label="Example cities">
+          <button type="button" data-preset="delhi">Delhi</button>
+          <button type="button" data-preset="lahore">Lahore</button>
+          <button type="button" data-preset="beijing">Beijing</button>
+          <button type="button" data-preset="milan">Milan</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Who is home</legend>
+        <div class="counts">
+          <div class="field">
+            <label for="adults">Adults</label>
+            <input id="adults" name="adults" type="number" min="0" max="12" value="2" inputmode="numeric" required>
+          </div>
+          <div class="field">
+            <label for="children">Children</label>
+            <input id="children" name="children" type="number" min="0" max="12" value="0" inputmode="numeric" required>
+          </div>
+          <div class="field">
+            <label for="older_adults">Older adults</label>
+            <input id="older_adults" name="older_adults" type="number" min="0" max="12" value="0" inputmode="numeric" required>
+          </div>
+        </div>
+        <div class="check">
+          <input id="sensitive" name="sensitive" type="checkbox" aria-describedby="sensitive-hint">
+          <label for="sensitive">Someone is more sensitive to dirty air</label>
+        </div>
+        <p class="hint" id="sensitive-hint">Pregnancy, asthma, or a heart or lung condition. The plan stores only yes or no, and it never asks which.</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>The home</legend>
+        <div class="field">
+          <label for="heating">Heating tonight</label>
+          <select id="heating" name="heating">
+            <option value="none">No heating</option>
+            <option value="electric">Electric</option>
+            <option value="district">District heat</option>
+            <option value="gas">Gas</option>
+            <option value="wood_coal">Wood or coal</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="cooking">Cooking</label>
+          <select id="cooking" name="cooking">
+            <option value="gas">Gas</option>
+            <option value="induction">Induction or electric</option>
+            <option value="mixed">A mix, including solid fuel</option>
+            <option value="biomass">Wood, dung, or charcoal</option>
+          </select>
+        </div>
+        <div class="check">
+          <input id="purifier" name="purifier" type="checkbox">
+          <label for="purifier">We already own a HEPA cleaner</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Getting around</legend>
+        <div class="field">
+          <label for="commute">Usual work trip</label>
+          <select id="commute" name="commute">
+            <option value="car">Car, alone or one household</option>
+            <option value="metro">Metro or train</option>
+            <option value="bus">Bus</option>
+            <option value="cycle">Bicycle</option>
+            <option value="walk">Walk</option>
+            <option value="wfh">Work from home</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="distance">One-way distance</label>
+          <select id="distance" name="distance">
+            <option value="under_2">Under 2 km</option>
+            <option value="2_to_8" selected>2 to 8 km</option>
+            <option value="over_8">Over 8 km</option>
+          </select>
+        </div>
+        <div class="check">
+          <input id="transit_available" name="transit_available" type="checkbox" checked>
+          <label for="transit_available">A bus or metro could replace this car trip</label>
+        </div>
+        <div class="check">
+          <input id="school_run" name="school_run" type="checkbox">
+          <label for="school_run">There is a school run today</label>
+        </div>
+        <div class="check">
+          <input id="outdoor_exercise" name="outdoor_exercise" type="checkbox">
+          <label for="outdoor_exercise">Someone usually exercises or plays outside</label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>The block</legend>
+        <div class="check">
+          <input id="burns_waste" name="burns_waste" type="checkbox">
+          <label for="burns_waste">Waste or leaves sometimes get burned nearby</label>
+        </div>
+        <div class="field">
+          <label for="audience">Who is this plan for?</label>
+          <select id="audience" name="audience">
+            <option value="household">Our household</option>
+            <option value="school">A school</option>
+            <option value="block">A block or residents’ group</option>
+          </select>
+        </div>
+      </fieldset>
+
+      <div class="actions">
+        <button type="submit" id="build">Build today’s plan</button>
+        <button type="button" id="sample" class="ghost">Load a sample winter day</button>
+      </div>
+    </form>
+
+    <section id="results" class="panel" aria-labelledby="results-title">
+      <h2 id="results-title" tabindex="-1">What a plan contains</h2>
+      <p>Three kinds of advice, each with the change it makes: a lower-emission routine, an indoor air step, and a sustainable swap. The numbers are calculated before any model writes a sentence.</p>
+      <ul class="intro">
+        <li><strong>Routine.</strong> When to be outside, how to do the school run, and when a mask is only the backup.</li>
+        <li><strong>Indoor.</strong> Cooking, heating, the bedroom air, and when to open a window.</li>
+        <li><strong>Alternative.</strong> The commute and the bag that does not get burned.</li>
+      </ul>
+      <noscript><p>Hearthline needs JavaScript to request a plan. The calculation itself runs on the server.</p></noscript>
+    </section>
+  </main>
+  <footer class="colophon">
+    <p>Hearthline is a planning aid. It is not a medical device and it is not an official air-quality bulletin.</p>
+  </footer>
+  <script src="/app.js"></script>
+</body>
+</html>
