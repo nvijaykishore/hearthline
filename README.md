@@ -30,7 +30,7 @@ The page collects a place and a lifestyle, and nothing clinical beyond a yes or 
 
 Air data is cached for twenty minutes. The browser talks only to this server. Outbound requests are limited to Open-Meteo and `api.x.ai`.
 
-The factors and the policy live in `hearthline/impact.py`. The sentences live in `hearthline/present.py`. The page is static files under `hearthline/static/` and does not inject HTML from the response.
+Dose arithmetic lives in `hearthline/impact.py`. The choice of day lives in `hearthline/recommend.py`. Card wording lives in `hearthline/cards.py`. Number sentences live in `hearthline/present.py`. The page is static files under `hearthline/static/` and does not inject HTML from the response.
 
 Open `/?sample=1` to see a full illustrative winter morning without the network.
 

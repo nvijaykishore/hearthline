@@ -146,11 +146,13 @@ class ServerTests(unittest.TestCase):
         self.assertIn("fields", payload)
 
     def test_static_script_does_not_inject_html(self):
-        _status, _headers, body = self._get("/app.js")
-        script = body.decode("utf-8")
-        self.assertNotIn("innerHTML", script)
-        self.assertNotIn("document.write", script)
-        self.assertNotIn("eval(", script)
+        for path in ("/app.js", "/dom.js", "/render.js"):
+            status, _headers, body = self._get(path)
+            self.assertEqual(status, 200, path)
+            script = body.decode("utf-8")
+            self.assertNotIn("innerHTML", script)
+            self.assertNotIn("document.write", script)
+            self.assertNotIn("eval(", script)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import TypeVar
 
 from hearthline.models import (
     AUDIENCE,
@@ -36,6 +37,7 @@ _REQUIRED = frozenset(
     }
 )
 _OPTIONAL = frozenset({"latitude", "longitude"})
+_V = TypeVar("_V")
 
 
 class ValidationError(Exception):
@@ -100,6 +102,26 @@ def _read_city(value: object, errors: dict[str, str]) -> str:
     return city_clean
 
 
+def _known(value: _V | None) -> _V:
+    """A field that survived validation. Asserts disappear under python -O."""
+    if value is None:
+        raise ValidationError({"form": "Check the highlighted fields."})
+    return value
+
+
+def _people(payload: dict, errors: dict[str, str]) -> tuple[int | None, int | None, int | None]:
+    adults = _number(payload.get("adults"), "adults", errors)
+    children = _number(payload.get("children"), "children", errors)
+    older = _number(payload.get("older_adults"), "older_adults", errors)
+    if None not in (adults, children, older):
+        total = adults + children + older
+        if total < 1 or total > 16:
+            errors["adults"] = "The household needs between 1 and 16 people."
+        elif adults + older < 1:
+            errors["adults"] = "Include at least one adult or older adult."
+    return adults, children, older
+
+
 def city_from(value: object) -> str:
     errors: dict[str, str] = {}
     city = _read_city(value, errors)
@@ -117,17 +139,7 @@ def household_from(payload: object) -> Household:
         errors["form"] = "Remove fields this plan does not use."
 
     city_clean = _read_city(payload.get("city"), errors)
-
-    adults = _number(payload.get("adults"), "adults", errors)
-    children = _number(payload.get("children"), "children", errors)
-    older = _number(payload.get("older_adults"), "older_adults", errors)
-    if None not in (adults, children, older):
-        total = adults + children + older
-        if total < 1 or total > 16:
-            errors["adults"] = "The household needs between 1 and 16 people."
-        elif adults + older < 1:
-            errors["adults"] = "Include at least one adult or older adult."
-
+    adults, children, older = _people(payload, errors)
     heating = _enum(payload.get("heating"), "heating", HEATING, errors)
     cooking = _enum(payload.get("cooking"), "cooking", COOKING, errors)
     commute = _enum(payload.get("commute"), "commute", COMMUTE, errors)
@@ -145,29 +157,24 @@ def household_from(payload: object) -> Household:
 
     if errors:
         raise ValidationError(errors)
-    assert adults is not None and children is not None and older is not None
-    assert heating is not None and cooking is not None and commute is not None
-    assert distance is not None and audience is not None
-    assert sensitive is not None and purifier is not None and transit is not None
-    assert exercise is not None and school is not None and burns is not None
     return Household(
         city=city_clean,
         latitude=0.0 if latitude is None else latitude,
         longitude=0.0 if longitude is None else longitude,
-        adults=adults,
-        children=children,
-        older_adults=older,
-        sensitive=sensitive,
-        heating=heating,
-        cooking=cooking,
-        purifier=purifier,
-        commute=commute,
-        distance=distance,
-        transit_available=transit,
-        outdoor_exercise=exercise,
-        school_run=school,
-        burns_waste=burns,
-        audience=audience,
+        adults=_known(adults),
+        children=_known(children),
+        older_adults=_known(older),
+        sensitive=_known(sensitive),
+        heating=_known(heating),
+        cooking=_known(cooking),
+        purifier=_known(purifier),
+        commute=_known(commute),
+        distance=_known(distance),
+        transit_available=_known(transit),
+        outdoor_exercise=_known(exercise),
+        school_run=_known(school),
+        burns_waste=_known(burns),
+        audience=_known(audience),
     )
 
 

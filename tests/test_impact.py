@@ -10,13 +10,12 @@ from hearthline.impact import (
     WASTE_KG,
     WOOD_EF_G_PER_KG,
     WOOD_KG,
-    baseline_scenario,
     co2e_g,
     emitted_pm_g,
     outdoor_limit,
-    recommended_scenario,
     totals,
 )
+from hearthline.recommend import baseline_scenario, recommended_scenario
 from hearthline.models import AirNow
 from hearthline.sample import sample_air, sample_household
 

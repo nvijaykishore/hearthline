@@ -5,18 +5,16 @@ from __future__ import annotations
 import json
 import os
 import re
-import threading
-import time
 import traceback
 from collections.abc import Callable
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Generic, TypeVar
 from urllib.parse import ParseResult, parse_qs, unquote, urlparse
 
 from hearthline.aqi import AirError, fetch_json, load_air, search_places
 from hearthline.ask import local_answer
+from hearthline.limits import RateLimiter, TtlCache
 from hearthline.llm import MODEL, accept_tone, configured, explain
 from hearthline.models import AirNow, Household
 from hearthline.plan import apply_tone, build_plan
@@ -24,14 +22,14 @@ from hearthline.safety import question_kind
 from hearthline.sample import sample_air, sample_household
 from hearthline.validate import ValidationError, city_from, coordinates_supplied, household_from, question_from
 
-_T = TypeVar("_T")
-
 _STATIC_ROOT = Path(__file__).resolve().parent / "static"
 _STATIC = {
     "/": ("index.html", "text/html; charset=utf-8"),
     "/index.html": ("index.html", "text/html; charset=utf-8"),
     "/styles.css": ("styles.css", "text/css; charset=utf-8"),
     "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "/dom.js": ("dom.js", "text/javascript; charset=utf-8"),
+    "/render.js": ("render.js", "text/javascript; charset=utf-8"),
     "/favicon.svg": ("favicon.svg", "image/svg+xml"),
 }
 _SECURITY = {
@@ -50,50 +48,6 @@ class ChoosePlace(Exception):
     def __init__(self, places: list[dict]):
         self.places = places
         super().__init__("Choose a place.")
-
-
-class TtlCache(Generic[_T]):
-    def __init__(self, ttl_s: float, max_items: int = 200):
-        self.ttl = ttl_s
-        self.max_items = max_items
-        self._data: dict[object, tuple[float, _T]] = {}
-        self._lock = threading.Lock()
-
-    def get(self, key: object) -> _T | None:
-        now = time.monotonic()
-        with self._lock:
-            item = self._data.get(key)
-            if item is None or item[0] < now:
-                self._data.pop(key, None)
-                return None
-            return item[1]
-
-    def set(self, key: object, value: _T) -> None:
-        with self._lock:
-            if len(self._data) >= self.max_items:
-                self._data.clear()
-            self._data[key] = (time.monotonic() + self.ttl, value)
-
-
-class RateLimiter:
-    def __init__(self, limit: int, window_s: float):
-        self.limit = limit
-        self.window = window_s
-        self._hits: dict[str, list[float]] = {}
-        self._lock = threading.Lock()
-
-    def allow(self, key: str) -> bool:
-        now = time.monotonic()
-        with self._lock:
-            hits = [stamp for stamp in self._hits.get(key, []) if now - stamp < self.window]
-            if len(hits) >= self.limit:
-                self._hits[key] = hits
-                return False
-            hits.append(now)
-            self._hits[key] = hits
-            if len(self._hits) > 4000:
-                self._hits.clear()
-            return True
 
 
 class AppState:

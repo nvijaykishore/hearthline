@@ -43,17 +43,19 @@ class AirError(Exception):
     """A failure the household can act on. The message is safe to show."""
 
 
+_CATEGORIES = (
+    (50, "Good"),
+    (100, "Moderate"),
+    (150, "Unhealthy for Sensitive Groups"),
+    (200, "Unhealthy"),
+    (300, "Very Unhealthy"),
+)
+
+
 def category_for(aqi: int) -> str:
-    if aqi <= 50:
-        return "Good"
-    if aqi <= 100:
-        return "Moderate"
-    if aqi <= 150:
-        return "Unhealthy for Sensitive Groups"
-    if aqi <= 200:
-        return "Unhealthy"
-    if aqi <= 300:
-        return "Very Unhealthy"
+    for limit, name in _CATEGORIES:
+        if aqi <= limit:
+            return name
     return "Hazardous"
 
 
