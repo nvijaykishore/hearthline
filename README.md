@@ -12,9 +12,17 @@ The person using it is deciding what to do today: whether the child plays outsid
 
 The figures are calculated before any model speaks.
 
-A deterministic day model compares the unchanged day with a recommended day. Card text is allowed to quote only those results. When `XAI_API_KEY` is set, Grok (`grok-4.7` on the xAI Responses API) may add a short phrasing. That request is sent with `store: false`, the key stays on the server, and any reply that contains a digit or a banned claim (a diagnosis, a cure, an ozone generator) is dropped. The figures on screen do not change. With no key, the same plan is still complete.
+A deterministic day model compares the unchanged day with a recommended day. Card text is allowed to quote only those results. Where Grok is called, and what it is allowed to say, is in the GenAI section below.
 
 That split is the product. A language model is a poor place to invent a dose, and a dose with no explanation is a poor thing to hand a family.
+
+## GenAI
+
+Hearthline uses one generative service: xAI Grok, model `grok-4.7`, on the Responses API. The server calls it only after the day's figures exist, and the key stays there.
+
+It is used in two places. A new plan may gain two short sentences for the family and one sentence on why each step fits. A follow-up about that plan may be rephrased the same way. Questions about treatment, or about hiding burning or spoofing a monitor, receive a fixed local reply.
+
+The prompt carries the place name, the air-quality category, who the plan is for, and the step titles. Particle readings and household counts stay in the calculator. The call sets `store` to false. A reply with a digit, or a banned claim such as a diagnosis or an ozone device, is discarded. Card numbers stay the calculator's. With no key, local sentences are the whole narrative, which is how the public site is running. The call lives in `hearthline/llm.py`.
 
 ## How a plan is made
 
