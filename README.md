@@ -48,6 +48,8 @@ python -m hearthline
 
 Then open http://127.0.0.1:8000 . Copy `.env.example` to `.env` only if you want model phrasing. A `.env` in the working directory is read at startup and never overrides variables that are already set. The key is not sent to the browser.
 
+The same app is deployed at https://hearthline-black.vercel.app .
+
 ## Walkthrough
 
 `docs/hearthline-walkthrough.mp4` follows one Delhi sample morning: the household form, the air reading, a lower-emission routine, an indoor step, a cleaner trip, and the rule that a model may phrase the plan and cannot change the figures.
