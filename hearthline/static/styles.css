@@ -1,17 +1,19 @@
 :root {
   color-scheme: light;
-  --paper: #f3efe6;
-  --ink: #1c1915;
-  --muted: #3a342c;
-  --pine: #1a4332;
-  --pine-soft: #e5f0ea;
-  --copper: #7a3e0c;
-  --card: #fffaf3;
-  --line: #ddcfc0;
-  --focus: #0f5132;
-  --danger: #6e1f1f;
-  --danger-bg: #f8e8e4;
-  --shadow: 0 1px 0 rgba(28, 25, 21, 0.04);
+  --paper: #e8f6ec;
+  --ink: #123026;
+  --muted: #1f5a40;
+  --pine: #146c43;
+  --pine-soft: #d7f3e1;
+  --leaf: #0f766e;
+  --card: #f7fdf9;
+  --line: #b7dec6;
+  --control: #3d8f68;
+  --focus: #0c5a36;
+  --danger: #7a2424;
+  --danger-bg: #fdeeee;
+  --on-pine: #f4fff8;
+  --shadow: 0 1px 0 rgba(18, 48, 38, 0.06);
   --sans: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
   --serif: Palatino, "Palatino Linotype", "Iowan Old Style", Georgia, serif;
 }
@@ -21,7 +23,7 @@
 body {
   margin: 0;
   background:
-    radial-gradient(900px 420px at 0% -10%, #efe2cc 0%, transparent 55%),
+    radial-gradient(900px 420px at 0% -10%, #cfead8 0%, transparent 55%),
     var(--paper);
   color: var(--ink);
   font-family: var(--sans);
@@ -117,9 +119,9 @@ input[type="text"], input[type="number"], select, textarea {
   max-width: 100%;
   min-width: 0;
   min-height: 44px;
-  border: 1px solid #b7aa9b;
+  border: 1px solid var(--control);
   border-radius: 10px;
-  background: #fff;
+  background: #fbfffc;
   color: var(--ink);
   font: inherit;
   padding: 0.4rem 0.6rem;
@@ -146,7 +148,7 @@ button, .presets button {
   border-radius: 999px;
   border: 1px solid var(--pine);
   background: var(--pine);
-  color: #f6f3ec;
+  color: var(--on-pine);
   font: inherit;
   padding: 0.4rem 0.95rem;
   cursor: pointer;
@@ -176,7 +178,7 @@ button:disabled { opacity: 0.6; cursor: wait; }
 }
 .bands li[aria-current="true"] {
   background: var(--pine);
-  color: #f6f3ec;
+  color: var(--on-pine);
   border-color: var(--pine);
   font-weight: 650;
 }
@@ -194,9 +196,9 @@ button:disabled { opacity: 0.6; cursor: wait; }
   border-left: 6px solid var(--pine);
   border-radius: 14px;
   padding: 0.85rem 1rem 1rem;
-  background: #fff;
+  background: #fbfffc;
 }
-.card[data-category="indoor"] { border-left-color: var(--copper); }
+.card[data-category="indoor"] { border-left-color: var(--leaf); }
 .card[data-category="alternative"] { border-left-color: var(--ink); }
 .kicker {
   text-transform: uppercase;

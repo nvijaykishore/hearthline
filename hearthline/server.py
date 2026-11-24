@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import re
 import threading
 import time
 import traceback
@@ -143,6 +145,19 @@ def air_for(state: AppState, household: Household, label: str):
     return air
 
 
+_IP = re.compile(r"\A[0-9A-Fa-f:.]{2,64}\Z")
+
+
+def request_ip(headers, peer: str) -> str:
+    """Visitor key for rate limits. On Vercel the socket peer is the platform."""
+    if os.environ.get("VERCEL"):
+        raw = headers.get("x-real-ip") if headers is not None else None
+        token = (raw or "").strip()
+        if _IP.fullmatch(token):
+            return token
+    return peer or "unknown"
+
+
 def make_plan(state: AppState, household: Household, label: str) -> dict:
     plan = build_plan(household, air_for(state, household, label))
     try:
@@ -193,7 +208,8 @@ class Handler(BaseHTTPRequestHandler):
         return data
 
     def _ip(self) -> str:
-        return self.client_address[0]
+        peer = self.client_address[0] if self.client_address else ""
+        return request_ip(self.headers, peer)
 
     def do_GET(self):
         parsed = urlparse(self.path)
