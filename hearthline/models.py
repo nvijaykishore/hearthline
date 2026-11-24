@@ -55,7 +55,6 @@ class Scenario:
     work_mode: str
     school_mode: str
     exercise: str
-    time_to_clean: bool
     mask: bool
     purifier_mode: str
     cook_controlled: bool

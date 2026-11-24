@@ -85,7 +85,7 @@ def prompt_for(plan: dict, question: str | None = None) -> str:
 def accept_tone(data: dict, allowed_ids: set[str]) -> dict | None:
     tone = data.get("tone") if isinstance(data.get("tone"), str) else ""
     notes_in = data.get("notes") if isinstance(data.get("notes"), dict) else {}
-    notes = {}
+    notes: dict[str, str] = {}
     for key, value in notes_in.items():
         if key in allowed_ids and isinstance(value, str) and prose_ok(value, limit=280):
             notes[key] = value.strip()
@@ -136,4 +136,4 @@ def explain(plan: dict, question: str | None = None, timeout: float = 25.0) -> d
         return None
     if data is None:
         return None
-    return accept_tone(data, set(action["id"] for action in plan["actions"]))
+    return accept_tone(data, {action["id"] for action in plan["actions"]})

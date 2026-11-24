@@ -84,8 +84,8 @@ def hour_label(iso: str) -> str:
 
 
 def cleanest_window(
-    times: list,
-    values: list,
+    times: list[str],
+    values: list[object],
     observed: str,
     width: int = 3,
     horizon: int = 18,
@@ -137,7 +137,7 @@ def parse_air(payload: dict, place_label: str, source: str = "open-meteo") -> Ai
     observed = str(current.get("time") or "")
     hourly = payload.get("hourly") if isinstance(payload.get("hourly"), dict) else {}
     window = cleanest_window(
-        list(hourly.get("time") or []),
+        [str(stamp) for stamp in (hourly.get("time") or [])],
         list(hourly.get("pm2_5") or []),
         observed,
     )
@@ -220,7 +220,7 @@ def _place_label(row: dict) -> str:
 
 def search_places(name: str, fetch: Callable[[str], dict] = fetch_json) -> list[dict]:
     data = fetch(geocode_url(name))
-    found = []
+    found: list[dict] = []
     for row in data.get("results") or []:
         if not isinstance(row, dict):
             continue

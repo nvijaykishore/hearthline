@@ -16,25 +16,26 @@ from hearthline.models import (
 _CITY = re.compile(r"^[\w\s,.'’()\-]+$", re.UNICODE)
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 
-_FIELDS = {
-    "city": str,
-    "adults": int,
-    "children": int,
-    "older_adults": int,
-    "sensitive": bool,
-    "heating": str,
-    "cooking": str,
-    "purifier": bool,
-    "commute": str,
-    "distance": str,
-    "transit_available": bool,
-    "outdoor_exercise": bool,
-    "school_run": bool,
-    "burns_waste": bool,
-    "audience": str,
-}
-
-_OPTIONAL = {"latitude": float, "longitude": float}
+_REQUIRED = frozenset(
+    {
+        "city",
+        "adults",
+        "children",
+        "older_adults",
+        "sensitive",
+        "heating",
+        "cooking",
+        "purifier",
+        "commute",
+        "distance",
+        "transit_available",
+        "outdoor_exercise",
+        "school_run",
+        "burns_waste",
+        "audience",
+    }
+)
+_OPTIONAL = frozenset({"latitude", "longitude"})
 
 
 class ValidationError(Exception):
@@ -43,7 +44,7 @@ class ValidationError(Exception):
         super().__init__("Check the highlighted fields.")
 
 
-def _number(value, name: str, errors: dict) -> int | None:
+def _number(value: object, name: str, errors: dict[str, str]) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         errors[name] = "Use a whole number."
         return None
@@ -53,36 +54,69 @@ def _number(value, name: str, errors: dict) -> int | None:
     return value
 
 
-def _bool(value, name: str, errors: dict) -> bool | None:
+def _bool(value: object, name: str, errors: dict[str, str]) -> bool | None:
     if not isinstance(value, bool):
         errors[name] = "Choose yes or no."
         return None
     return value
 
 
-def _enum(value, name: str, allowed: tuple, errors: dict) -> str | None:
+def _enum(value: object, name: str, allowed: tuple[str, ...], errors: dict[str, str]) -> str | None:
     if not isinstance(value, str) or value not in allowed:
         errors[name] = "Choose one of the listed options."
         return None
     return value
 
 
+def _coord(value: object, name: str, lo: float, hi: float, errors: dict[str, str]) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        errors[name] = "Pick a place from the list."
+        return None
+    number = float(value)
+    if not lo <= number <= hi:
+        errors[name] = f"That {name} is out of range."
+        return None
+    return number
+
+
+def _coordinates(payload: dict, errors: dict[str, str]) -> tuple[float | None, float | None]:
+    lat = payload.get("latitude", None)
+    lon = payload.get("longitude", None)
+    if lat is None and lon is None:
+        return None, None
+    return (
+        _coord(lat, "latitude", -90.0, 90.0, errors),
+        _coord(lon, "longitude", -180.0, 180.0, errors),
+    )
+
+
+def _read_city(value: object, errors: dict[str, str]) -> str:
+    if not isinstance(value, str):
+        errors["city"] = "Enter a city."
+        return ""
+    city_clean = _CONTROL.sub("", value).strip()
+    if not (2 <= len(city_clean) <= 120) or not _CITY.match(city_clean):
+        errors["city"] = "Use the place name, up to 120 characters."
+    return city_clean
+
+
+def city_from(value: object) -> str:
+    errors: dict[str, str] = {}
+    city = _read_city(value, errors)
+    if errors:
+        raise ValidationError(errors)
+    return city
+
+
 def household_from(payload: object) -> Household:
     if not isinstance(payload, dict):
         raise ValidationError({"form": "Send the household as a JSON object."})
     errors: dict[str, str] = {}
-    unknown = set(payload) - set(_FIELDS) - set(_OPTIONAL)
+    unknown = set(payload) - _REQUIRED - _OPTIONAL
     if unknown:
         errors["form"] = "Remove fields this plan does not use."
 
-    city = payload.get("city")
-    if not isinstance(city, str):
-        errors["city"] = "Enter a city."
-        city_clean = ""
-    else:
-        city_clean = _CONTROL.sub("", city).strip()
-        if not (2 <= len(city_clean) <= 120) or not _CITY.match(city_clean):
-            errors["city"] = "Use the place name, up to 120 characters."
+    city_clean = _read_city(payload.get("city"), errors)
 
     adults = _number(payload.get("adults"), "adults", errors)
     children = _number(payload.get("children"), "children", errors)
@@ -107,27 +141,15 @@ def household_from(payload: object) -> Household:
     school = _bool(payload.get("school_run"), "school_run", errors)
     burns = _bool(payload.get("burns_waste"), "burns_waste", errors)
 
-    lat = payload.get("latitude", None)
-    lon = payload.get("longitude", None)
-    if lat is None and lon is None:
-        latitude = longitude = None
-    else:
-        latitude = longitude = None
-        if isinstance(lat, bool) or not isinstance(lat, (int, float)):
-            errors["latitude"] = "Pick a place from the list."
-        elif not -90 <= float(lat) <= 90:
-            errors["latitude"] = "That latitude is out of range."
-        else:
-            latitude = float(lat)
-        if isinstance(lon, bool) or not isinstance(lon, (int, float)):
-            errors["longitude"] = "Pick a place from the list."
-        elif not -180 <= float(lon) <= 180:
-            errors["longitude"] = "That longitude is out of range."
-        else:
-            longitude = float(lon)
+    latitude, longitude = _coordinates(payload, errors)
 
     if errors:
         raise ValidationError(errors)
+    assert adults is not None and children is not None and older is not None
+    assert heating is not None and cooking is not None and commute is not None
+    assert distance is not None and audience is not None
+    assert sensitive is not None and purifier is not None and transit is not None
+    assert exercise is not None and school is not None and burns is not None
     return Household(
         city=city_clean,
         latitude=0.0 if latitude is None else latitude,

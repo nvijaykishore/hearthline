@@ -5,6 +5,8 @@ Every figure in these sentences is passed in. This module does not invent one.
 
 from __future__ import annotations
 
+from hearthline.models import DayTotals
+
 
 def ug(value: float) -> str:
     if abs(value) >= 10:
@@ -78,33 +80,35 @@ def emitted_sentence(before: float, after: float) -> str | None:
     )
 
 
-def headline(before_in: float, after_in: float, before_c: float, after_c: float, before_e: float, after_e: float) -> str:
-    parts = []
-    if before_in > 1:
-        delta = before_in - after_in
-        share = delta / before_in * 100.0
+def _join_clauses(parts: list[str]) -> str:
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]}, and {parts[1]}"
+    return ", ".join(parts[:-1]) + ", and " + parts[-1]
+
+
+def headline(before: DayTotals, after: DayTotals) -> str:
+    parts: list[str] = []
+    if before.inhaled_ug > 1:
+        delta = before.inhaled_ug - after.inhaled_ug
+        share = delta / before.inhaled_ug * 100.0
         if delta > 1:
             parts.append(
-                f"inhaled PM2.5 falls from about {ug(before_in)} to about {ug(after_in)} ({pct(share)} less)"
+                f"inhaled PM2.5 falls from about {ug(before.inhaled_ug)} to about {ug(after.inhaled_ug)} ({pct(share)} less)"
             )
         elif delta < -1:
             parts.append(
-                f"inhaled PM2.5 rises from about {ug(before_in)} to about {ug(after_in)}"
+                f"inhaled PM2.5 rises from about {ug(before.inhaled_ug)} to about {ug(after.inhaled_ug)}"
             )
-    c_delta = before_c - after_c
+    c_delta = before.co2e_g - after.co2e_g
     if c_delta >= 50:
         parts.append(f"climate pollution falls by about {co2e(c_delta)}")
     elif c_delta <= -50:
         parts.append(f"climate pollution rises by about {co2e(abs(c_delta))}")
-    e_delta = before_e - after_e
+    e_delta = before.emitted_pm_g - after.emitted_pm_g
     if e_delta >= 1:
         parts.append(f"about {grams(e_delta)} less PM2.5 is sent into neighborhood air")
     if not parts:
         return "The day you described is already close to this plan. The cards are the remaining moves."
-    if len(parts) == 1:
-        joined = parts[0]
-    elif len(parts) == 2:
-        joined = f"{parts[0]}, and {parts[1]}"
-    else:
-        joined = ", ".join(parts[:-1]) + ", and " + parts[-1]
-    return f"Against an unchanged day, {joined}."
+    return f"Against an unchanged day, {_join_clauses(parts)}."

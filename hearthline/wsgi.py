@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import traceback
+from collections.abc import Callable, Mapping
 from email.parser import BytesParser
 from email.policy import HTTP
 
@@ -17,25 +18,27 @@ class _Server:
         self.state = state
 
 
-def _header_block(environ) -> bytes:
-    lines = []
+def _header_block(environ: Mapping[str, object]) -> bytes:
+    lines: list[str] = []
     for key, value in environ.items():
         if not key.startswith("HTTP_") or value is None:
             continue
         lines.append(f"{key[5:].replace('_', '-')}: {value}")
-    if environ.get("CONTENT_TYPE"):
-        lines.append(f"Content-Type: {environ['CONTENT_TYPE']}")
-    if environ.get("CONTENT_LENGTH"):
-        lines.append(f"Content-Length: {environ['CONTENT_LENGTH']}")
+    content_type = environ.get("CONTENT_TYPE")
+    if content_type:
+        lines.append(f"Content-Type: {content_type}")
+    content_length = environ.get("CONTENT_LENGTH")
+    if content_length:
+        lines.append(f"Content-Length: {content_length}")
     text = "\r\n".join(lines) + "\r\n\r\n"
     return text.encode("latin-1", "replace")
 
 
-def _split_response(raw: bytes):
+def _split_response(raw: bytes) -> tuple[str, list[tuple[str, str]], bytes]:
     head, _, body = raw.partition(b"\r\n\r\n")
     lines = head.decode("latin-1").split("\r\n") if head else []
     status = "500 Internal Server Error"
-    headers = []
+    headers: list[tuple[str, str]] = []
     if lines:
         parts = lines[0].split(" ", 2)
         if len(parts) >= 3:
@@ -50,7 +53,7 @@ def _split_response(raw: bytes):
     return status, headers, body
 
 
-def build_app(state: AppState | None = None):
+def build_app(state: AppState | None = None) -> Callable:
     bound = _Server(state or AppState())
 
     def application(environ, start_response):

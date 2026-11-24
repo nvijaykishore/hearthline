@@ -8,6 +8,24 @@
     milan: { city: "Milan, Italy", latitude: 45.4642, longitude: 9.19 }
   };
 
+  var SAMPLE_FORM = {
+    city: "Delhi, India",
+    adults: 2,
+    children: 2,
+    older_adults: 1,
+    sensitive: true,
+    heating: "none",
+    cooking: "gas",
+    purifier: false,
+    commute: "car",
+    distance: "2_to_8",
+    transit_available: true,
+    outdoor_exercise: true,
+    school_run: true,
+    burns_waste: true,
+    audience: "household"
+  };
+
   var BANDS = [
     "Good",
     "Moderate",
@@ -127,17 +145,12 @@
     });
   }
 
-  function renderPlan(plan) {
-    clear(results);
-    var title = el("h2", { id: "results-title", tabindex: "-1", text: "Today in " + plan.place.label });
-    results.appendChild(title);
-
+  function renderAir(plan) {
     var air = plan.air;
-    var head = el("div", { class: "air-head" }, [
+    results.appendChild(el("div", { class: "air-head" }, [
       el("p", { class: "aqi-word", text: air.category }),
       el("p", { class: "aqi-num", text: "Index " + air.us_aqi + " · PM2.5 " + air.pm2_5 + " µg/m³" })
-    ]);
-    results.appendChild(head);
+    ]));
     results.appendChild(el("p", { class: "source", text: air.note + " " + air.driver }));
     if (air.guideline) results.appendChild(el("p", { class: "source", text: air.guideline }));
     if (air.clean_start) {
@@ -145,7 +158,6 @@
         text: "Cleaner stretch: three hours starting at " + air.clean_start + ", about " + air.clean_pm2_5 + " µg/m³ PM2.5."
       }));
     }
-
     var bands = el("ul", { class: "bands" });
     BANDS.forEach(function (band) {
       var item = el("li", { text: band });
@@ -153,7 +165,6 @@
       bands.appendChild(item);
     });
     results.appendChild(bands);
-
     results.appendChild(el("p", { text: plan.household_line + " " + plan.audience_line }));
     results.appendChild(el("p", { class: "callout", text: plan.summary }));
     if (plan.tone) results.appendChild(el("p", { class: "note", text: plan.tone }));
@@ -163,7 +174,9 @@
         ? "The figures are from the calculator. A model added the short phrasing and was not allowed to add numbers."
         : "The figures and the wording both come from the calculator. Add an API key on the server when you want a model to phrase the same plan."
     }));
+  }
 
+  function renderCards(plan) {
     var cards = el("div", { class: "cards" });
     plan.actions.forEach(function (action) {
       var steps = el("ol");
@@ -185,11 +198,12 @@
       cards.appendChild(card);
     });
     results.appendChild(cards);
+  }
 
+  function renderTotals(plan) {
     var combined = plan.combined;
     var table = el("table");
-    var caption = el("caption", { text: "The whole day, before and after the plan" });
-    table.appendChild(caption);
+    table.appendChild(el("caption", { text: "The whole day, before and after the plan" }));
     var thead = el("thead");
     var headRow = el("tr");
     ["", "Unchanged day", "This plan"].forEach(function (label) {
@@ -215,14 +229,18 @@
       class: "source",
       text: "Card figures are what you lose by skipping that one step after the others are in place. They are not meant to be added to this table."
     }));
+  }
 
+  function renderLimits(plan) {
     var limits = el("ul", { class: "limits" });
     plan.limits.forEach(function (line) {
       limits.appendChild(el("li", { text: line }));
     });
     results.appendChild(el("h3", { text: "Limits" }));
     results.appendChild(limits);
+  }
 
+  function renderAsk() {
     var ask = el("form", { class: "ask", id: "ask" });
     ask.appendChild(el("h3", { text: "Ask about this plan" }));
     ask.appendChild(el("label", { for: "question", text: "Question" }));
@@ -231,13 +249,22 @@
     ask.appendChild(area);
     ask.appendChild(el("p", { id: "ask-hint", class: "hint", text: "Exposure and routines only. Hearthline will not advise medicines." }));
     ask.appendChild(el("button", { type: "submit", text: "Ask" }));
-    var answer = el("div", { id: "answer" });
-    ask.appendChild(answer);
+    ask.appendChild(el("div", { id: "answer" }));
     ask.addEventListener("submit", onAsk);
     results.appendChild(ask);
+  }
 
+  function renderPlan(plan) {
+    clear(results);
+    var title = el("h2", { id: "results-title", tabindex: "-1", text: "Today in " + plan.place.label });
+    results.appendChild(title);
+    renderAir(plan);
+    renderCards(plan);
+    renderTotals(plan);
+    renderLimits(plan);
+    renderAsk();
     title.focus();
-    say("Plan ready for " + plan.place.label + ". " + air.category + " air. " + plan.actions.length + " steps.");
+    say("Plan ready for " + plan.place.label + ". " + plan.air.category + " air. " + plan.actions.length + " steps.");
   }
 
   function post(url, body) {
@@ -351,23 +378,7 @@
     fetch("/api/sample", { headers: { Accept: "application/json" } })
       .then(function (response) { return response.json(); })
       .then(function (plan) {
-        fill({
-          city: "Delhi, India",
-          adults: 2,
-          children: 2,
-          older_adults: 1,
-          sensitive: true,
-          heating: "none",
-          cooking: "gas",
-          purifier: false,
-          commute: "car",
-          distance: "2_to_8",
-          transit_available: true,
-          outdoor_exercise: true,
-          school_run: true,
-          burns_waste: true,
-          audience: "household"
-        });
+        fill(SAMPLE_FORM);
         picked = { label: "Delhi, India", latitude: 28.6139, longitude: 77.209 };
         lastPayload = payload();
         renderPlan(plan);

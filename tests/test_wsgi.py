@@ -6,6 +6,7 @@ import unittest
 from hearthline.sample import sample_payload
 from hearthline.server import AppState, request_ip
 from hearthline.wsgi import build_app
+from support import household_payload
 
 
 def _fetch(url):
@@ -65,25 +66,7 @@ class WsgiTests(unittest.TestCase):
             application,
             "POST",
             "/api/plan",
-            {
-                "city": "Delhi, India",
-                "latitude": 28.6139,
-                "longitude": 77.209,
-                "adults": 2,
-                "children": 1,
-                "older_adults": 0,
-                "sensitive": True,
-                "heating": "none",
-                "cooking": "gas",
-                "purifier": False,
-                "commute": "car",
-                "distance": "2_to_8",
-                "transit_available": True,
-                "outdoor_exercise": True,
-                "school_run": False,
-                "burns_waste": False,
-                "audience": "household",
-            },
+            household_payload(latitude=28.6139, longitude=77.209, school_run=False),
         )
         self.assertTrue(status.startswith("200"))
         plan = json.loads(body)

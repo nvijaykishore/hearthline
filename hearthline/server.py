@@ -8,19 +8,23 @@ import re
 import threading
 import time
 import traceback
+from collections.abc import Callable
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlparse
+from typing import Generic, TypeVar
+from urllib.parse import ParseResult, parse_qs, unquote, urlparse
 
 from hearthline.aqi import AirError, fetch_json, load_air, search_places
 from hearthline.ask import local_answer
 from hearthline.llm import MODEL, accept_tone, configured, explain
-from hearthline.models import Household
+from hearthline.models import AirNow, Household
 from hearthline.plan import apply_tone, build_plan
 from hearthline.safety import question_kind
 from hearthline.sample import sample_air, sample_household
-from hearthline.validate import ValidationError, coordinates_supplied, household_from, question_from
+from hearthline.validate import ValidationError, city_from, coordinates_supplied, household_from, question_from
+
+_T = TypeVar("_T")
 
 _STATIC_ROOT = Path(__file__).resolve().parent / "static"
 _STATIC = {
@@ -48,14 +52,14 @@ class ChoosePlace(Exception):
         super().__init__("Choose a place.")
 
 
-class TtlCache:
+class TtlCache(Generic[_T]):
     def __init__(self, ttl_s: float, max_items: int = 200):
         self.ttl = ttl_s
         self.max_items = max_items
-        self._data: dict = {}
+        self._data: dict[object, tuple[float, _T]] = {}
         self._lock = threading.Lock()
 
-    def get(self, key):
+    def get(self, key: object) -> _T | None:
         now = time.monotonic()
         with self._lock:
             item = self._data.get(key)
@@ -64,7 +68,7 @@ class TtlCache:
                 return None
             return item[1]
 
-    def set(self, key, value):
+    def set(self, key: object, value: _T) -> None:
         with self._lock:
             if len(self._data) >= self.max_items:
                 self._data.clear()
@@ -93,23 +97,35 @@ class RateLimiter:
 
 
 class AppState:
-    def __init__(self, fetch=fetch_json, explain_fn=explain):
+    def __init__(
+        self,
+        fetch: Callable[..., dict] = fetch_json,
+        explain_fn: Callable[..., dict | None] = explain,
+    ) -> None:
         self.fetch = fetch
         self.explain_fn = explain_fn
-        self.air_cache = TtlCache(20 * 60)
-        self.place_cache = TtlCache(6 * 3600)
+        self.air_cache: TtlCache[AirNow] = TtlCache(20 * 60)
+        self.place_cache: TtlCache[list[dict]] = TtlCache(6 * 3600)
         self.plans = RateLimiter(20, 600)
         self.asks = RateLimiter(30, 600)
         self.places = RateLimiter(60, 600)
-        self.static = {}
-        for path, (name, mime) in _STATIC.items():
-            self.static[path] = ((_STATIC_ROOT / name).read_bytes(), mime)
+        self.static = {
+            path: ((_STATIC_ROOT / name).read_bytes(), mime) for path, (name, mime) in _STATIC.items()
+        }
 
 
 def _guard(tone: dict | None, plan: dict) -> dict | None:
     if not isinstance(tone, dict):
         return None
     return accept_tone(tone, {action["id"] for action in plan["actions"]})
+
+
+def _phrasing(state: AppState, plan: dict, question: str | None = None) -> dict | None:
+    try:
+        raw = state.explain_fn(plan) if question is None else state.explain_fn(plan, question)
+        return _guard(raw, plan)
+    except Exception:
+        return None
 
 
 def resolve_household(state: AppState, payload: dict) -> tuple[Household, str]:
@@ -135,7 +151,7 @@ def resolve_household(state: AppState, payload: dict) -> tuple[Household, str]:
     return located, place["label"]
 
 
-def air_for(state: AppState, household: Household, label: str):
+def air_for(state: AppState, household: Household, label: str) -> AirNow:
     key = (round(household.latitude, 2), round(household.longitude, 2))
     cached = state.air_cache.get(key)
     if cached is not None:
@@ -148,7 +164,7 @@ def air_for(state: AppState, household: Household, label: str):
 _IP = re.compile(r"\A[0-9A-Fa-f:.]{2,64}\Z")
 
 
-def request_ip(headers, peer: str) -> str:
+def request_ip(headers: object, peer: str) -> str:
     """Visitor key for rate limits. On Vercel the socket peer is the platform."""
     if os.environ.get("VERCEL"):
         raw = headers.get("x-real-ip") if headers is not None else None
@@ -160,27 +176,19 @@ def request_ip(headers, peer: str) -> str:
 
 def make_plan(state: AppState, household: Household, label: str) -> dict:
     plan = build_plan(household, air_for(state, household, label))
-    try:
-        tone = _guard(state.explain_fn(plan), plan)
-    except Exception:
-        tone = None
-    return apply_tone(plan, tone)
+    return apply_tone(plan, _phrasing(state, plan))
 
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "Hearthline"
     protocol_version = "HTTP/1.0"
 
-    def log_message(self, fmt: str, *args):
-        # Request lines only. Bodies are never logged.
-        super().log_message(fmt, *args)
-
-    def _security(self, cache: str):
+    def _security(self, cache: str) -> None:
         for key, value in _SECURITY.items():
             self.send_header(key, value)
         self.send_header("Cache-Control", cache)
 
-    def _json(self, code: int, payload: dict):
+    def _json(self, code: int, payload: dict) -> None:
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(code)
         self._security("no-store")
@@ -211,112 +219,19 @@ class Handler(BaseHTTPRequestHandler):
         peer = self.client_address[0] if self.client_address else ""
         return request_ip(self.headers, peer)
 
-    def do_GET(self):
+    def _state(self) -> AppState:
+        return self.server.state
+
+    def _route_path(self) -> tuple[str | None, ParseResult]:
         parsed = urlparse(self.path)
         path = unquote(parsed.path)
         if path != parsed.path or ".." in path or "\\" in path:
-            self._json(404, {"error": "Not found."})
-            return
-        state: AppState = self.server.state
-        try:
-            if path == "/api/health":
-                self._json(200, {"ok": True, "llm_configured": configured(), "model": MODEL})
-                return
-            if path == "/api/sample":
-                plan = build_plan(sample_household(), sample_air())
-                self._json(200, plan)
-                return
-            if path == "/api/places":
-                if not state.places.allow(self._ip()):
-                    self._json(429, {"error": "Too many place lookups. Wait a few minutes."})
-                    return
-                name = (parse_qs(parsed.query).get("q") or [""])[0]
-                try:
-                    household_from(
-                        {
-                            "city": name,
-                            "adults": 1,
-                            "children": 0,
-                            "older_adults": 0,
-                            "sensitive": False,
-                            "heating": "none",
-                            "cooking": "induction",
-                            "purifier": False,
-                            "commute": "wfh",
-                            "distance": "under_2",
-                            "transit_available": False,
-                            "outdoor_exercise": False,
-                            "school_run": False,
-                            "burns_waste": False,
-                            "audience": "household",
-                        }
-                    )
-                except ValidationError as exc:
-                    self._json(400, {"error": "Check the place name.", "fields": exc.fields})
-                    return
-                found = search_places(name, fetch=state.fetch)
-                self._json(200, {"places": found})
-                return
-            if path in state.static:
-                body, mime = state.static[path]
-                self.send_response(200)
-                self._security("public, max-age=300")
-                self.send_header("Content-Type", mime)
-                self.send_header("Content-Length", str(len(body)))
-                self.end_headers()
-                self.wfile.write(body)
-                return
-            self._json(404, {"error": "Not found."})
-        except AirError as exc:
-            self._json(502, {"error": str(exc)})
-        except Exception:
-            traceback.print_exc()
-            self._json(500, {"error": "Something went wrong on our side."})
+            return None, parsed
+        return path, parsed
 
-    def do_POST(self):
-        parsed = urlparse(self.path)
-        path = unquote(parsed.path)
-        state: AppState = self.server.state
+    def _handle(self, work: Callable[[], None]) -> None:
         try:
-            if path not in ("/api/plan", "/api/ask"):
-                self._json(404, {"error": "Not found."})
-                return
-            payload = self._read_json()
-            if path == "/api/plan":
-                if not state.plans.allow(self._ip()):
-                    self._json(429, {"error": "Too many plans from this network. Wait a few minutes."})
-                    return
-                household, label = resolve_household(state, payload)
-                self._json(200, make_plan(state, household, label))
-                return
-            if not state.asks.allow(self._ip()):
-                self._json(429, {"error": "Too many questions. Wait a few minutes."})
-                return
-            question = question_from(payload)
-            body = dict(payload)
-            body.pop("question", None)
-            household, label = resolve_household(state, body)
-            plan = build_plan(household, air_for(state, household, label))
-            answer = local_answer(plan, question)
-            tone = ""
-            source = "local"
-            if question_kind(question) == "plan":
-                try:
-                    phrased = _guard(state.explain_fn(plan, question), plan)
-                except Exception:
-                    phrased = None
-                if phrased and phrased.get("tone"):
-                    tone = phrased["tone"]
-                    source = "model"
-            self._json(
-                200,
-                {
-                    "answer": answer,
-                    "tone": tone,
-                    "narrative_source": source,
-                    "summary": plan["summary"],
-                },
-            )
+            work()
         except ValidationError as exc:
             self._json(400, {"error": "Check the highlighted fields.", "fields": exc.fields})
         except ChoosePlace as exc:
@@ -327,17 +242,119 @@ class Handler(BaseHTTPRequestHandler):
             traceback.print_exc()
             self._json(500, {"error": "Something went wrong on our side."})
 
-    def do_PUT(self):
+    def _send_static(self, path: str) -> None:
+        body, mime = self._state().static[path]
+        self.send_response(200)
+        self._security("public, max-age=300")
+        self.send_header("Content-Type", mime)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _places(self, parsed: ParseResult) -> None:
+        state = self._state()
+        if not state.places.allow(self._ip()):
+            self._json(429, {"error": "Too many place lookups. Wait a few minutes."})
+            return
+        name = (parse_qs(parsed.query).get("q") or [""])[0]
+        try:
+            city_from(name)
+        except ValidationError as exc:
+            self._json(400, {"error": "Check the place name.", "fields": exc.fields})
+            return
+        found = search_places(name, fetch=state.fetch)
+        self._json(200, {"places": found})
+
+    def _plan(self, payload: dict) -> None:
+        state = self._state()
+        if not state.plans.allow(self._ip()):
+            self._json(429, {"error": "Too many plans from this network. Wait a few minutes."})
+            return
+        household, label = resolve_household(state, payload)
+        self._json(200, make_plan(state, household, label))
+
+    def _ask(self, payload: dict) -> None:
+        state = self._state()
+        if not state.asks.allow(self._ip()):
+            self._json(429, {"error": "Too many questions. Wait a few minutes."})
+            return
+        question = question_from(payload)
+        body = dict(payload)
+        body.pop("question", None)
+        household, label = resolve_household(state, body)
+        plan = build_plan(household, air_for(state, household, label))
+        answer = local_answer(plan, question)
+        tone = ""
+        source = "local"
+        if question_kind(question) == "plan":
+            phrased = _phrasing(state, plan, question)
+            if phrased and phrased.get("tone"):
+                tone = phrased["tone"]
+                source = "model"
+        self._json(
+            200,
+            {
+                "answer": answer,
+                "tone": tone,
+                "narrative_source": source,
+                "summary": plan["summary"],
+            },
+        )
+
+    def _get(self, path: str, parsed: ParseResult) -> None:
+        state = self._state()
+        if path == "/api/health":
+            self._json(200, {"ok": True, "llm_configured": configured(), "model": MODEL})
+            return
+        if path == "/api/sample":
+            self._json(200, build_plan(sample_household(), sample_air()))
+            return
+        if path == "/api/places":
+            self._places(parsed)
+            return
+        if path in state.static:
+            self._send_static(path)
+            return
+        self._json(404, {"error": "Not found."})
+
+    def _post(self, path: str) -> None:
+        if path not in ("/api/plan", "/api/ask"):
+            self._json(404, {"error": "Not found."})
+            return
+        payload = self._read_json()
+        if path == "/api/plan":
+            self._plan(payload)
+            return
+        self._ask(payload)
+
+    def do_GET(self):
+        path, parsed = self._route_path()
+        if path is None:
+            self._json(404, {"error": "Not found."})
+            return
+        self._handle(lambda: self._get(path, parsed))
+
+    def do_POST(self):
+        path, _parsed = self._route_path()
+        if path is None:
+            self._json(404, {"error": "Not found."})
+            return
+        self._handle(lambda: self._post(path))
+
+    def _not_allowed(self) -> None:
         self._json(405, {"error": "Method not allowed."})
 
+    def do_PUT(self):
+        self._not_allowed()
+
     def do_DELETE(self):
-        self._json(405, {"error": "Method not allowed."})
+        self._not_allowed()
 
 
 class HearthServer(ThreadingHTTPServer):
     daemon_threads = True
 
-    def __init__(self, address, state: AppState):
+    def __init__(self, address: tuple[str, int], state: AppState):
         self.state = state
         super().__init__(address, Handler)
 
@@ -346,11 +363,8 @@ def make_server(host: str = "127.0.0.1", port: int = 8000, state: AppState | Non
     return HearthServer((host, port), state or AppState())
 
 
-def _load_dotenv():
+def _load_dotenv() -> None:
     """Read a local .env without overriding variables already set. No dependency."""
-    import os
-    from pathlib import Path
-
     path = Path.cwd() / ".env"
     if not path.is_file():
         return
@@ -365,9 +379,7 @@ def _load_dotenv():
             os.environ[key] = value
 
 
-def main():
-    import os
-
+def main() -> None:
     _load_dotenv()
     host = os.environ.get("HEARTHLINE_HOST", "127.0.0.1")
     port = int(os.environ.get("HEARTHLINE_PORT", "8000"))

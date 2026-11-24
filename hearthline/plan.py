@@ -19,7 +19,7 @@ from hearthline.impact import (
     recommended_scenario,
     totals,
 )
-from hearthline.models import AirNow, Household, Scenario
+from hearthline.models import AirNow, DayTotals, Household, Scenario
 from hearthline.present import co2e, co2e_sentence, emitted_sentence, grams, headline, inhaled_sentence, ug
 
 LIMITS = (
@@ -30,8 +30,8 @@ LIMITS = (
 )
 
 
-def _lines(before, after) -> list[str]:
-    lines = []
+def _lines(before: DayTotals, after: DayTotals) -> list[str]:
+    lines: list[str] = []
     for sentence in (
         inhaled_sentence(before.inhaled_ug, after.inhaled_ug),
         co2e_sentence(before.co2e_g, after.co2e_g),
@@ -95,7 +95,14 @@ def _exercise_card(household: Household, air: AirNow, base: Scenario, plan: Scen
     return _card("exercise", "routine", title, steps, impacts)
 
 
-def _marginal(household, air, base, plan, field: str, baseline_value) -> list[str]:
+def _marginal(
+    household: Household,
+    air: AirNow,
+    base: Scenario,
+    plan: Scenario,
+    field: str,
+    baseline_value: object,
+) -> list[str]:
     if getattr(plan, field) == baseline_value:
         return []
     without = replace(plan, **{field: baseline_value})
@@ -104,7 +111,9 @@ def _marginal(household, air, base, plan, field: str, baseline_value) -> list[st
     return _lines(before, after)
 
 
-def _commute_card(household, air, base, plan, refusal: str | None) -> dict:
+def _commute_card(
+    household: Household, air: AirNow, base: Scenario, plan: Scenario, refusal: str | None
+) -> dict:
     km = DISTANCE_ROUND_KM[household.distance]
     if household.commute == "wfh" and plan.school_mode == base.school_mode:
         title = "The work day stays home"
@@ -154,7 +163,7 @@ def _commute_card(household, air, base, plan, refusal: str | None) -> dict:
     return _card("commute", "alternative", title, steps, impacts)
 
 
-def _school_card(household, air, base, plan) -> dict | None:
+def _school_card(household: Household, air: AirNow, base: Scenario, plan: Scenario) -> dict | None:
     if not household.school_run:
         return None
     steps = [
@@ -177,7 +186,7 @@ def _school_card(household, air, base, plan) -> dict | None:
     return _card("school-run", "routine", "Cut the idle at pickup", steps, impacts)
 
 
-def _cook_card(household, air, base, plan) -> dict:
+def _cook_card(household: Household, air: AirNow, base: Scenario, plan: Scenario) -> dict:
     titles = {
         "biomass": "Get children out of the biomass kitchen",
         "gas": "Calm the gas flame and the pan",
@@ -208,7 +217,7 @@ def _cook_card(household, air, base, plan) -> dict:
     return _card("cook", "indoor", titles[household.cooking], steps[household.cooking], impacts)
 
 
-def _heat_card(household, air, base, plan) -> dict | None:
+def _heat_card(household: Household, air: AirNow, base: Scenario, plan: Scenario) -> dict | None:
     if household.heating not in ("gas", "wood_coal"):
         return None
     if household.heating == "wood_coal":
@@ -230,7 +239,7 @@ def _heat_card(household, air, base, plan) -> dict | None:
     return _card("heat", "indoor", title, steps, impacts)
 
 
-def _bedroom_card(household, air, base, plan) -> dict:
+def _bedroom_card(household: Household, air: AirNow, base: Scenario, plan: Scenario) -> dict:
     if plan.purifier_mode == "hepa":
         title = "Run the cleaner in the bedroom"
         steps = [
@@ -264,7 +273,7 @@ def _bedroom_card(household, air, base, plan) -> dict:
     return _card("bedroom", "indoor", title, steps, impacts)
 
 
-def _ventilate_card(household, air, plan) -> dict:
+def _ventilate_card(household: Household, air: AirNow, plan: Scenario) -> dict:
     window = _window_phrase(air)
     parts = indoor_parts(household, air.pm2_5, plan)
     indoor = parts["other"]
@@ -300,7 +309,7 @@ def _ventilate_card(household, air, plan) -> dict:
     return _card("ventilate", "indoor", title, steps, impacts)
 
 
-def _burn_card(household, air, base, plan) -> dict | None:
+def _burn_card(household: Household, air: AirNow, base: Scenario, plan: Scenario) -> dict | None:
     bag = WASTE_KG * WASTE_EF_G_PER_KG
     if household.burns_waste:
         impacts = _marginal(household, air, base, plan, "burns", True)
@@ -321,7 +330,7 @@ def _burn_card(household, air, base, plan) -> dict | None:
     return None
 
 
-def _mask_card(household, air, base, plan) -> dict | None:
+def _mask_card(household: Household, air: AirNow, base: Scenario, plan: Scenario) -> dict | None:
     if not plan.mask:
         return None
     impacts = _marginal(household, air, base, plan, "mask", False)
@@ -337,7 +346,7 @@ def _mask_card(household, air, base, plan) -> dict | None:
     return _card("mask", "routine", "Mask the minutes you still spend outside", steps, impacts)
 
 
-def _recess_card(household, air, plan) -> dict | None:
+def _recess_card(household: Household, air: AirNow, plan: Scenario) -> dict | None:
     if household.audience not in ("school", "block"):
         return None
     if air.us_aqi < outdoor_limit(household):
@@ -357,7 +366,7 @@ def _recess_card(household, air, plan) -> dict | None:
 
 
 def _who(household: Household) -> str:
-    bits = []
+    bits: list[str] = []
     if household.adults:
         bits.append(f"{household.adults} adult" + ("s" if household.adults != 1 else ""))
     if household.children:
@@ -382,11 +391,47 @@ def _audience_line(household: Household) -> str:
     return "Written for one household."
 
 
-def build_plan(household: Household, air: AirNow) -> dict:
-    base = baseline_scenario(household)
-    plan, refusal = recommended_scenario(household, air)
-    before = totals(household, air, base)
-    after = totals(household, air, plan)
+def _air_view(air: AirNow) -> dict:
+    driver = "PM2.5 is the pollutant the dose uses."
+    if abs(air.us_aqi - air.pm_aqi) > 25:
+        driver = "The index includes more than PM2.5. The dose still uses the PM2.5 concentration."
+    guideline = ""
+    if air.pm2_5 >= WHO_PM25_24H:
+        guideline = f"Above the WHO 24-hour PM2.5 guideline of {WHO_PM25_24H:.0f} µg/m³."
+    return {
+        "pm2_5": round(air.pm2_5, 1),
+        "us_aqi": air.us_aqi,
+        "category": air.category,
+        "pm_aqi": air.pm_aqi,
+        "observed_at": air.observed_at,
+        "clean_pm2_5": None if air.clean_pm2_5 is None else round(air.clean_pm2_5, 1),
+        "clean_start": None if air.clean_start is None else hour_label(air.clean_start),
+        "clean_end": None if air.clean_end is None else hour_label(air.clean_end),
+        "source": air.source,
+        "note": air.note,
+        "driver": driver,
+        "guideline": guideline,
+    }
+
+
+def _combined(before: DayTotals, after: DayTotals) -> dict:
+    return {
+        "inhaled_ug_baseline": round(before.inhaled_ug, 1),
+        "inhaled_ug_plan": round(after.inhaled_ug, 1),
+        "co2e_g_baseline": round(before.co2e_g, 1),
+        "co2e_g_plan": round(after.co2e_g, 1),
+        "emitted_pm_g_baseline": round(before.emitted_pm_g, 1),
+        "emitted_pm_g_plan": round(after.emitted_pm_g, 1),
+        "inhaled_baseline": ug(before.inhaled_ug),
+        "inhaled_plan": ug(after.inhaled_ug),
+        "co2e_baseline": co2e(before.co2e_g),
+        "co2e_plan": co2e(after.co2e_g),
+        "emitted_baseline": grams(before.emitted_pm_g),
+        "emitted_plan": grams(after.emitted_pm_g),
+    }
+
+
+def _actions(household: Household, air: AirNow, base: Scenario, plan: Scenario, refusal: str | None) -> list[dict]:
     cards = [
         _exercise_card(household, air, base, plan),
         _school_card(household, air, base, plan),
@@ -399,55 +444,28 @@ def build_plan(household: Household, air: AirNow) -> dict:
         _mask_card(household, air, base, plan),
         _recess_card(household, air, plan),
     ]
-    actions = [card for card in cards if card is not None]
-    driver = "PM2.5 is the pollutant the dose uses."
-    if abs(air.us_aqi - air.pm_aqi) > 25:
-        driver = "The index includes more than PM2.5. The dose still uses the PM2.5 concentration."
-    who_line = ""
-    if air.pm2_5 >= WHO_PM25_24H:
-        who_line = f"Above the WHO 24-hour PM2.5 guideline of {WHO_PM25_24H:.0f} µg/m³."
+    return [card for card in cards if card is not None]
+
+
+def build_plan(household: Household, air: AirNow) -> dict:
+    base = baseline_scenario(household)
+    plan, refusal = recommended_scenario(household, air)
+    before = totals(household, air, base)
+    after = totals(household, air, plan)
     return {
         "place": {
             "label": air.place_label or household.city,
             "latitude": household.latitude,
             "longitude": household.longitude,
         },
-        "air": {
-            "pm2_5": round(air.pm2_5, 1),
-            "us_aqi": air.us_aqi,
-            "category": air.category,
-            "pm_aqi": air.pm_aqi,
-            "observed_at": air.observed_at,
-            "clean_pm2_5": None if air.clean_pm2_5 is None else round(air.clean_pm2_5, 1),
-            "clean_start": None if air.clean_start is None else hour_label(air.clean_start),
-            "clean_end": None if air.clean_end is None else hour_label(air.clean_end),
-            "source": air.source,
-            "note": air.note,
-            "driver": driver,
-            "guideline": who_line,
-        },
+        "air": _air_view(air),
         "household_line": _who(household),
         "audience_line": _audience_line(household),
-        "summary": headline(
-            before.inhaled_ug, after.inhaled_ug, before.co2e_g, after.co2e_g, before.emitted_pm_g, after.emitted_pm_g
-        ),
+        "summary": headline(before, after),
         "tone": "",
         "narrative_source": "local",
-        "combined": {
-            "inhaled_ug_baseline": round(before.inhaled_ug, 1),
-            "inhaled_ug_plan": round(after.inhaled_ug, 1),
-            "co2e_g_baseline": round(before.co2e_g, 1),
-            "co2e_g_plan": round(after.co2e_g, 1),
-            "emitted_pm_g_baseline": round(before.emitted_pm_g, 1),
-            "emitted_pm_g_plan": round(after.emitted_pm_g, 1),
-            "inhaled_baseline": ug(before.inhaled_ug),
-            "inhaled_plan": ug(after.inhaled_ug),
-            "co2e_baseline": co2e(before.co2e_g),
-            "co2e_plan": co2e(after.co2e_g),
-            "emitted_baseline": grams(before.emitted_pm_g),
-            "emitted_plan": grams(after.emitted_pm_g),
-        },
-        "actions": actions,
+        "combined": _combined(before, after),
+        "actions": _actions(household, air, base, plan, refusal),
         "limits": list(LIMITS),
         "choices": {
             "commute": plan.work_mode,
@@ -469,7 +487,7 @@ def apply_tone(plan: dict, tone: dict | None) -> dict:
         updated["tone"] = text
         updated["narrative_source"] = "model"
     notes = tone.get("notes") or {}
-    actions = []
+    actions: list[dict] = []
     for action in plan["actions"]:
         note = notes.get(action["id"]) or ""
         if note:
@@ -481,7 +499,3 @@ def apply_tone(plan: dict, tone: dict | None) -> dict:
             actions.append(action)
     updated["actions"] = actions
     return updated
-
-
-def action_ids(plan: dict) -> list[str]:
-    return [action["id"] for action in plan["actions"]]

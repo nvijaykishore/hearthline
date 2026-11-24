@@ -7,6 +7,7 @@ import urllib.request
 from hearthline.aqi import aqi_from_pm25
 from hearthline.sample import sample_payload
 from hearthline.server import AppState, make_server
+from support import household_payload
 
 
 def _air_response(url):
@@ -87,47 +88,25 @@ class ServerTests(unittest.TestCase):
     def test_plan_with_coordinates_and_ambiguous_city(self):
         status, plan = self._post(
             "/api/plan",
-            {
-                "city": "Delhi, India",
-                "latitude": 28.6139,
-                "longitude": 77.209,
-                "adults": 2,
-                "children": 1,
-                "older_adults": 0,
-                "sensitive": True,
-                "heating": "none",
-                "cooking": "gas",
-                "purifier": False,
-                "commute": "car",
-                "distance": "2_to_8",
-                "transit_available": True,
-                "outdoor_exercise": True,
-                "school_run": True,
-                "burns_waste": False,
-                "audience": "household",
-            },
+            household_payload(latitude=28.6139, longitude=77.209),
         )
         self.assertEqual(status, 200)
         self.assertLess(plan["combined"]["inhaled_ug_plan"], plan["combined"]["inhaled_ug_baseline"])
         status, choice = self._post(
             "/api/plan",
-            {
-                "city": "Ambiguous",
-                "adults": 1,
-                "children": 0,
-                "older_adults": 0,
-                "sensitive": False,
-                "heating": "none",
-                "cooking": "induction",
-                "purifier": False,
-                "commute": "wfh",
-                "distance": "under_2",
-                "transit_available": False,
-                "outdoor_exercise": False,
-                "school_run": False,
-                "burns_waste": False,
-                "audience": "household",
-            },
+            household_payload(
+                city="Ambiguous",
+                adults=1,
+                children=0,
+                older_adults=0,
+                sensitive=False,
+                cooking="induction",
+                commute="wfh",
+                distance="under_2",
+                transit_available=False,
+                outdoor_exercise=False,
+                school_run=False,
+            ),
         )
         self.assertEqual(status, 409)
         self.assertEqual(len(choice["places"]), 2)
@@ -140,29 +119,31 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(status, 404)
         status, answer = self._post(
             "/api/ask",
-            {
-                "question": "what medicine should I take for chest pain",
-                "city": "Delhi",
-                "latitude": 28.6,
-                "longitude": 77.2,
-                "adults": 1,
-                "children": 0,
-                "older_adults": 0,
-                "sensitive": False,
-                "heating": "none",
-                "cooking": "induction",
-                "purifier": False,
-                "commute": "wfh",
-                "distance": "under_2",
-                "transit_available": False,
-                "outdoor_exercise": False,
-                "school_run": False,
-                "burns_waste": False,
-                "audience": "household",
-            },
+            household_payload(
+                question="what medicine should I take for chest pain",
+                city="Delhi",
+                latitude=28.6,
+                longitude=77.2,
+                adults=1,
+                children=0,
+                older_adults=0,
+                sensitive=False,
+                cooking="induction",
+                commute="wfh",
+                distance="under_2",
+                transit_available=False,
+                outdoor_exercise=False,
+                school_run=False,
+            ),
         )
         self.assertEqual(status, 200)
         self.assertIn("cannot diagnose", answer["answer"])
+
+    def test_places_rejects_a_tiny_query(self):
+        status, _headers, body = self._get("/api/places?q=x")
+        self.assertEqual(status, 400)
+        payload = json.loads(body.decode("utf-8"))
+        self.assertIn("fields", payload)
 
     def test_static_script_does_not_inject_html(self):
         _status, _headers, body = self._get("/app.js")

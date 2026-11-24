@@ -8,7 +8,8 @@ from hearthline.plan import build_plan
 from hearthline.present import inhaled_sentence
 from hearthline.safety import ABUSE_REPLY, TREATMENT_REPLY, prose_ok, question_kind
 from hearthline.sample import sample_air, sample_household
-from hearthline.validate import ValidationError, household_from
+from hearthline.validate import ValidationError, city_from, household_from
+from support import household_payload
 
 
 def clean_air():
@@ -102,23 +103,18 @@ class PlanTests(unittest.TestCase):
         self.assertIn("play", answer.lower())
 
     def test_validation_rejects_unknown_fields_and_bad_enums(self):
-        good = {
-            "city": "Delhi",
-            "adults": 1,
-            "children": 0,
-            "older_adults": 0,
-            "sensitive": False,
-            "heating": "none",
-            "cooking": "gas",
-            "purifier": False,
-            "commute": "wfh",
-            "distance": "under_2",
-            "transit_available": False,
-            "outdoor_exercise": False,
-            "school_run": False,
-            "burns_waste": False,
-            "audience": "household",
-        }
+        good = household_payload(
+            city="Delhi",
+            adults=1,
+            children=0,
+            older_adults=0,
+            sensitive=False,
+            commute="wfh",
+            distance="under_2",
+            transit_available=False,
+            outdoor_exercise=False,
+            school_run=False,
+        )
         self.assertEqual(household_from(good).city, "Delhi")
         with self.assertRaises(ValidationError):
             household_from(dict(good, heating="plasma"))
@@ -130,6 +126,9 @@ class PlanTests(unittest.TestCase):
             household_from(dict(good, city="https://evil.example"))
         with self.assertRaises(ValidationError):
             household_from(dict(good, adults=0, older_adults=0, children=2))
+        self.assertEqual(city_from("Delhi"), "Delhi")
+        with self.assertRaises(ValidationError):
+            city_from("x")
 
 
 if __name__ == "__main__":

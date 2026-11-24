@@ -1,8 +1,15 @@
 [project]
 name = "hearthline"
 version = "1.0.0"
+description = "A family day plan for severe winter smog."
+readme = "README.md"
 requires-python = ">=3.12"
+license = { text = "MIT" }
 dependencies = []
+
+[project.urls]
+Homepage = "https://hearthline-black.vercel.app"
+Repository = "https://github.com/nvijaykishore/hearthline"
 
 [tool.vercel]
 entrypoint = "app:app"

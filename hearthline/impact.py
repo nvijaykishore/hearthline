@@ -106,6 +106,9 @@ MODE_LABEL = {
     "wfh": "working from home",
 }
 
+_REST = {"adult": ADULT_REST, "child": CHILD_REST, "older": OLDER_REST}
+_WALK = {"adult": ADULT_WALK, "child": CHILD_PLAY, "older": OLDER_WALK}
+
 
 @dataclass(frozen=True)
 class Block:
@@ -165,11 +168,11 @@ def exercise_kind(household: Household) -> str | None:
 
 
 def _rest(kind: str) -> float:
-    return {"adult": ADULT_REST, "child": CHILD_REST, "older": OLDER_REST}[kind]
+    return _REST[kind]
 
 
 def _walk(kind: str) -> float:
-    return {"adult": ADULT_WALK, "child": CHILD_PLAY, "older": OLDER_WALK}[kind]
+    return _WALK[kind]
 
 
 def _exercise_vent(kind: str) -> float:
@@ -230,7 +233,7 @@ def _trip_blocks(
         return [Block(hours, outdoor * _mask(mask), vent, rest)]
     ride_h = round_km * VEHICLE_MIN_PER_KM / 60.0
     access_h = ACCESS_MIN[mode] / 60.0
-    blocks = []
+    blocks: list[Block] = []
     if access_h:
         blocks.append(Block(access_h, outdoor * _mask(mask), _walk(kind), rest))
     blocks.append(
@@ -286,7 +289,9 @@ def exercise_blocks(
     return [Block(EXERCISE_H, conc, vent, rest)]
 
 
-def _all_blocks(household: Household, air: AirNow, scenario: Scenario, parts: dict) -> list[Block]:
+def _all_blocks(
+    household: Household, air: AirNow, scenario: Scenario, parts: dict[str, float]
+) -> list[Block]:
     return (
         work_blocks(household, air, scenario)
         + school_trip_blocks(household, air, scenario)
@@ -373,7 +378,6 @@ def baseline_scenario(household: Household) -> Scenario:
         work_mode=household.commute,
         school_mode="car" if household.school_run and household.commute == "wfh" else "none",
         exercise="outdoor_now" if household.outdoor_exercise else "none",
-        time_to_clean=False,
         mask=False,
         purifier_mode="off",
         cook_controlled=False,
@@ -395,12 +399,12 @@ def _candidate_work_mode(household: Household, air: AirNow) -> str:
     return "car"
 
 
-def _accept_swap(household: Household, air: AirNow, candidate: str, mask: bool, timed: bool) -> bool:
+def _accept_swap(household: Household, air: AirNow, candidate: str, mask: bool) -> bool:
     if candidate == household.commute:
         return True
     # Compare the two modes under the same mask, so a mask is not mistaken
     # for a better vehicle.
-    current = replace(baseline_scenario(household), mask=mask, time_to_clean=timed)
+    current = replace(baseline_scenario(household), mask=mask)
     proposed = replace(current, work_mode=candidate)
     old = trip_inhaled_ug(household, air, current)
     new = trip_inhaled_ug(household, air, proposed)
@@ -438,89 +442,66 @@ def _choose_exercise(household: Household, air: AirNow, shaped: Scenario) -> str
     return best
 
 
-def recommended_scenario(household: Household, air: AirNow) -> tuple[Scenario, str | None]:
-    """Return the plan scenario and, when a lower-emission commute was refused,
-    a short reason the caller can show."""
-    sources = household.cooking in ("gas", "mixed", "biomass", "induction")
-    heat = household.heating in ("gas", "wood_coal")
+def _choose_purifier(household: Household, air: AirNow) -> str:
     dirty_home = household.cooking in ("gas", "mixed", "biomass") or household.heating in (
         "gas",
         "wood_coal",
     )
     if household.purifier and (air.us_aqi >= 51 or dirty_home):
-        purifier = "hepa"
-    elif not household.purifier and (
+        return "hepa"
+    if not household.purifier and (
         air.us_aqi >= 101 or household.cooking == "biomass" or household.heating == "wood_coal"
     ):
-        purifier = "diy"
-    else:
-        purifier = "off"
+        return "diy"
+    return "off"
 
+
+def _choose_school_mode(household: Household, air: AirNow) -> str:
+    if not household.school_run or household.commute != "wfh":
+        return "none"
+    bad = air.us_aqi >= outdoor_limit(household)
+    if bad and air.us_aqi >= 201:
+        return "car"
+    if household.transit_available:
+        return "metro"
+    if not bad:
+        return "walk"
+    return "car"
+
+
+def _choose_school_wait(household: Household, air: AirNow) -> float:
+    if not household.school_run:
+        return 0.0
+    if air.us_aqi >= outdoor_limit(household):
+        return 1.0
+    return 3.0
+
+
+def recommended_scenario(household: Household, air: AirNow) -> tuple[Scenario, str | None]:
+    """Return the plan scenario and, when a lower-emission commute was refused,
+    a short reason the caller can show."""
     severe = air.us_aqi >= 101
-    timed = clean_is_useful(air) and air.us_aqi >= outdoor_limit(household)
-    # Timing the cleaner window is for exercise and airing out, not for a
-    # commute that has a fixed clock. work_blocks still consult the flag;
-    # leave it false so commute dose stays on the current hour.
-    commute_timed = False
     mask = severe
-
     candidate = _candidate_work_mode(household, air)
     refusal = None
-    if candidate != household.commute and not _accept_swap(
-        household, air, candidate, mask, commute_timed
-    ):
+    if candidate != household.commute and not _accept_swap(household, air, candidate, mask):
         refusal = (
             "A switch to transit today means more minutes in the plume than it saves. "
             "Keep the car, set it to recirculate, and leave the engine off at the door."
         )
         candidate = household.commute
 
-    bad = air.us_aqi >= outdoor_limit(household)
-    if household.school_run and household.commute == "wfh":
-        if bad and air.us_aqi >= 201:
-            school_mode = "car"
-        elif household.transit_available:
-            school_mode = "metro"
-        elif not bad:
-            school_mode = "walk"
-        else:
-            school_mode = "car"
-    else:
-        school_mode = "none"
-
-    if not household.school_run:
-        wait = 0.0
-    elif bad:
-        wait = 1.0
-    else:
-        wait = 3.0
-    car_school = household.school_run and (
-        candidate == "car" or (household.commute == "wfh" and school_mode == "car")
-    )
-    idle = 0.0 if car_school else 0.0
-    # Recommended day never idles. Baseline carries the idle minutes.
-
     shaped = Scenario(
         work_mode=candidate,
-        school_mode=school_mode,
+        school_mode=_choose_school_mode(household, air),
         exercise="none",
-        time_to_clean=timed,
         mask=mask,
-        purifier_mode=purifier,
-        cook_controlled=sources,
-        heat_controlled=heat,
+        purifier_mode=_choose_purifier(household, air),
+        cook_controlled=True,  # every listed cooking type has a control step
+        heat_controlled=household.heating in ("gas", "wood_coal"),
         burns=False,
-        school_wait_min=wait,
-        idle_min=idle,
+        school_wait_min=_choose_school_wait(household, air),
+        idle_min=0.0,
     )
     exercise = _choose_exercise(household, air, shaped)
     return replace(shaped, exercise=exercise), refusal
-
-
-def contribution(before: DayTotals, after: DayTotals) -> dict[str, float]:
-    """Positive means the plan lowered that quantity relative to `before`."""
-    return {
-        "inhaled_ug": before.inhaled_ug - after.inhaled_ug,
-        "co2e_g": before.co2e_g - after.co2e_g,
-        "emitted_pm_g": before.emitted_pm_g - after.emitted_pm_g,
-    }
